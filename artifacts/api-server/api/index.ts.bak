@@ -1,0 +1,350 @@
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
+import cors from "cors";
+import {
+  db,
+  recipesTable,
+  blogsTable,
+  timeslotsTable,
+  bookingsTable,
+  eq,
+  count,
+  and,
+  desc,
+  asc,
+} from "@workspace/db";
+
+const app: Express = express();
+
+app.use(cors({ origin: true, credentials: true }));
+app.use(express.json());
+
+function requireAdmin(req: Request, res: Response, next: NextFunction): void {
+  const secret = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD;
+  const auth = req.headers["authorization"] as string | undefined;
+  if (!secret || auth !== `Bearer ${secret}`) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+}
+
+function isAdminRequest(req: Request): boolean {
+  const secret = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD;
+  const auth = req.headers["authorization"] as string | undefined;
+  return !!secret && auth === `Bearer ${secret}`;
+}
+
+// ---------- health ----------
+app.get("/api/healthz", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
+// ---------- admin ----------
+app.post("/api/admin/login", (req, res) => {
+  const secret = process.env.ADMIN_SECRET || process.env.ADMIN_PASSWORD;
+  if (!secret) {
+    res.status(503).json({ error: "Admin authentication not configured." });
+    return;
+  }
+  const password = req.body?.password;
+  if (password !== secret) {
+    res.status(401).json({ error: "Invalid password." });
+    return;
+  }
+  res.json({ token: secret });
+});
+
+app.get("/api/admin/stats", requireAdmin, async (_req, res) => {
+  const [[totalRecipes], [totalBlogs], [totalTimeslots], [totalBookings]] = await Promise.all([
+    db.select({ count: count() }).from(recipesTable),
+    db.select({ count: count() }).from(blogsTable),
+    db.select({ count: count() }).from(timeslotsTable),
+    db.select({ count: count() }).from(bookingsTable),
+  ]);
+
+  const [[publishedRecipes], [publishedBlogs], [availableTimeslots], [slotBookings], [directContacts]] = await Promise.all([
+    db.select({ count: count() }).from(recipesTable).where(eq(recipesTable.published, true)),
+    db.select({ count: count() }).from(blogsTable).where(eq(blogsTable.published, true)),
+    db.select({ count: count() }).from(timeslotsTable).where(eq(timeslotsTable.isBooked, false)),
+    db.select({ count: count() }).from(bookingsTable).where(eq(bookingsTable.bookingType, "slot")),
+    db.select({ count: count() }).from(bookingsTable).where(eq(bookingsTable.bookingType, "direct")),
+  ]);
+
+  res.json({
+    totalRecipes: Number(totalRecipes.count),
+    publishedRecipes: Number(publishedRecipes.count),
+    totalBlogs: Number(totalBlogs.count),
+    publishedBlogs: Number(publishedBlogs.count),
+    totalTimeslots: Number(totalTimeslots.count),
+    availableTimeslots: Number(availableTimeslots.count),
+    totalBookings: Number(totalBookings.count),
+    slotBookings: Number(slotBookings.count),
+    directContacts: Number(directContacts.count),
+  });
+});
+
+// ---------- recipes ----------
+app.get("/api/recipes", async (req, res) => {
+  const showAll = req.query.all === "true" && isAdminRequest(req);
+  const rows = await db
+    .select()
+    .from(recipesTable)
+    .where(showAll ? undefined : eq(recipesTable.published, true))
+    .orderBy(desc(recipesTable.createdAt));
+  res.json(rows);
+});
+
+app.post("/api/recipes", requireAdmin, async (req, res) => {
+  const data = req.body;
+  const [recipe] = await db
+    .insert(recipesTable)
+    .values({
+      title: data.title,
+      summary: data.summary ?? "",
+      content: data.content ?? "",
+      imageUrl: data.imageUrl ?? null,
+      ingredients: data.ingredients ?? [],
+      prepTime: data.prepTime ?? null,
+      cookTime: data.cookTime ?? null,
+      servings: data.servings ?? null,
+      published: data.published ?? false,
+    })
+    .returning();
+  res.status(201).json(recipe);
+});
+
+app.get("/api/recipes/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  const [recipe] = await db.select().from(recipesTable).where(eq(recipesTable.id, id));
+  if (!recipe) {
+    res.status(404).json({ error: "Recipe not found" });
+    return;
+  }
+  if (!recipe.published && !isAdminRequest(req)) {
+    res.status(404).json({ error: "Recipe not found" });
+    return;
+  }
+  res.json(recipe);
+});
+
+app.put("/api/recipes/:id", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const data = req.body;
+  const updateFields: Record<string, unknown> = {};
+  for (const key of ["title", "summary", "content", "imageUrl", "ingredients", "prepTime", "cookTime", "servings", "published"]) {
+    if (data[key] !== undefined) updateFields[key] = data[key];
+  }
+  const [recipe] = await db.update(recipesTable).set(updateFields).where(eq(recipesTable.id, id)).returning();
+  if (!recipe) {
+    res.status(404).json({ error: "Recipe not found" });
+    return;
+  }
+  res.json(recipe);
+});
+
+app.delete("/api/recipes/:id", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  await db.delete(recipesTable).where(eq(recipesTable.id, id));
+  res.sendStatus(204);
+});
+
+// ---------- blogs ----------
+app.get("/api/blogs", async (req, res) => {
+  const showAll = req.query.all === "true" && isAdminRequest(req);
+  const rows = await db
+    .select()
+    .from(blogsTable)
+    .where(showAll ? undefined : eq(blogsTable.published, true))
+    .orderBy(desc(blogsTable.createdAt));
+  res.json(rows);
+});
+
+app.post("/api/blogs", requireAdmin, async (req, res) => {
+  const data = req.body;
+  const [blog] = await db
+    .insert(blogsTable)
+    .values({
+      title: data.title,
+      summary: data.summary ?? "",
+      content: data.content ?? "",
+      imageUrl: data.imageUrl ?? null,
+      author: data.author ?? "Dr. Shweta Tripathi",
+      tags: data.tags ?? [],
+      published: data.published ?? false,
+    })
+    .returning();
+  res.status(201).json(blog);
+});
+
+app.get("/api/blogs/:id", async (req, res) => {
+  const id = Number(req.params.id);
+  const [blog] = await db.select().from(blogsTable).where(eq(blogsTable.id, id));
+  if (!blog) {
+    res.status(404).json({ error: "Blog post not found" });
+    return;
+  }
+  if (!blog.published && !isAdminRequest(req)) {
+    res.status(404).json({ error: "Blog post not found" });
+    return;
+  }
+  res.json(blog);
+});
+
+app.put("/api/blogs/:id", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const data = req.body;
+  const updateFields: Record<string, unknown> = {};
+  for (const key of ["title", "summary", "content", "imageUrl", "author", "tags", "published"]) {
+    if (data[key] !== undefined) updateFields[key] = data[key];
+  }
+  const [blog] = await db.update(blogsTable).set(updateFields).where(eq(blogsTable.id, id)).returning();
+  if (!blog) {
+    res.status(404).json({ error: "Blog post not found" });
+    return;
+  }
+  res.json(blog);
+});
+
+app.delete("/api/blogs/:id", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  await db.delete(blogsTable).where(eq(blogsTable.id, id));
+  res.sendStatus(204);
+});
+
+// ---------- timeslots ----------
+app.get("/api/timeslots", async (_req, res) => {
+  const today = new Date().toISOString().split("T")[0];
+  const rows = await db
+    .select()
+    .from(timeslotsTable)
+    .where(eq(timeslotsTable.isBooked, false))
+    .orderBy(asc(timeslotsTable.date), asc(timeslotsTable.startTime));
+  res.json(rows.filter((r) => r.date >= today));
+});
+
+app.post("/api/timeslots", requireAdmin, async (req, res) => {
+  const data = req.body;
+  const [slot] = await db
+    .insert(timeslotsTable)
+    .values({
+      date: String(data.date),
+      startTime: data.startTime,
+      endTime: data.endTime,
+      label: data.label ?? null,
+      isBooked: false,
+    })
+    .returning();
+  res.status(201).json(slot);
+});
+
+app.get("/api/timeslots/all", requireAdmin, async (_req, res) => {
+  const rows = await db.select().from(timeslotsTable).orderBy(asc(timeslotsTable.date), asc(timeslotsTable.startTime));
+  res.json(rows);
+});
+
+app.patch("/api/timeslots/:id", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const data = req.body;
+  const updateFields: Record<string, unknown> = {};
+  if (data.date !== undefined) updateFields.date = String(data.date);
+  if (data.startTime !== undefined) updateFields.startTime = data.startTime;
+  if (data.endTime !== undefined) updateFields.endTime = data.endTime;
+  if (data.label !== undefined) updateFields.label = data.label;
+  if (data.isBooked !== undefined) updateFields.isBooked = data.isBooked;
+  const [slot] = await db.update(timeslotsTable).set(updateFields).where(eq(timeslotsTable.id, id)).returning();
+  if (!slot) {
+    res.status(404).json({ error: "Time slot not found" });
+    return;
+  }
+  res.json(slot);
+});
+
+app.delete("/api/timeslots/:id", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const [slot] = await db.select().from(timeslotsTable).where(eq(timeslotsTable.id, id));
+  if (!slot) {
+    res.status(404).json({ error: "Time slot not found" });
+    return;
+  }
+  if (slot.isBooked) {
+    res.status(400).json({ error: "Cannot delete a booked time slot." });
+    return;
+  }
+  await db.delete(timeslotsTable).where(eq(timeslotsTable.id, id));
+  res.sendStatus(204);
+});
+
+// ---------- bookings ----------
+app.get("/api/bookings", requireAdmin, async (_req, res) => {
+  const rows = await db.select().from(bookingsTable).orderBy(desc(bookingsTable.createdAt));
+  res.json(rows);
+});
+
+app.post("/api/bookings", async (req, res) => {
+  const data = req.body;
+  let slotDate: string | null = null;
+  let slotStartTime: string | null = null;
+  let slotEndTime: string | null = null;
+
+  if (data.bookingType === "slot") {
+    if (!data.timeslotId) {
+      res.status(400).json({ error: "timeslotId is required for slot bookings." });
+      return;
+    }
+    const [slot] = await db.select().from(timeslotsTable).where(eq(timeslotsTable.id, data.timeslotId));
+    if (!slot) {
+      res.status(404).json({ error: "Time slot not found." });
+      return;
+    }
+    if (slot.isBooked) {
+      res.status(400).json({ error: "This time slot has already been booked." });
+      return;
+    }
+    await db.update(timeslotsTable).set({ isBooked: true }).where(eq(timeslotsTable.id, data.timeslotId));
+    slotDate = slot.date;
+    slotStartTime = slot.startTime;
+    slotEndTime = slot.endTime;
+  }
+
+  const [booking] = await db
+    .insert(bookingsTable)
+    .values({
+      timeslotId: data.timeslotId ?? null,
+      name: data.name,
+      email: data.email,
+      phone: data.phone ?? null,
+      message: data.message ?? null,
+      bookingType: data.bookingType,
+    })
+    .returning();
+
+  // NOTE: email notification is temporarily disabled — src/lib/email.ts
+  // isn't reachable from this inlined entrypoint yet. Add back once
+  // src/ bundling is fixed properly.
+
+  res.status(201).json(booking);
+});
+
+app.delete("/api/bookings/:id", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const [booking] = await db.select().from(bookingsTable).where(eq(bookingsTable.id, id));
+  if (!booking) {
+    res.status(404).json({ error: "Booking not found" });
+    return;
+  }
+  if (booking.timeslotId) {
+    await db.update(timeslotsTable).set({ isBooked: false }).where(eq(timeslotsTable.id, booking.timeslotId));
+  }
+  await db.delete(bookingsTable).where(eq(bookingsTable.id, id));
+  res.sendStatus(204);
+});
+app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("UNHANDLED ERROR:", err);
+  console.error("CAUSE:", err?.cause);
+  res.status(500).json({
+    error: err?.message || "Internal server error",
+    cause: err?.cause?.message || err?.cause || null,
+  });
+});
+
+export default app;
