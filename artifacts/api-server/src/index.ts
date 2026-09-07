@@ -1,18 +1,25 @@
-import { Router, type IRouter } from "express";
-import healthRouter from "./health.js";
-import recipesRouter from "./recipes.js";
-import blogsRouter from "./blogs.js";
-import timeslotsRouter from "./timeslots.js";
-import bookingsRouter from "./bookings.js";
-import adminRouter from "./admin.js";
+import app from "./app.js";
+import { logger } from "./lib/logger.js";
 
-const router: IRouter = Router();
+const rawPort = process.env["PORT"];
 
-router.use(healthRouter);
-router.use(recipesRouter);
-router.use(blogsRouter);
-router.use(timeslotsRouter);
-router.use(bookingsRouter);
-router.use(adminRouter);
+if (!rawPort) {
+  throw new Error(
+    "PORT environment variable is required but was not provided.",
+  );
+}
 
-export default router;
+const port = Number(rawPort);
+
+if (Number.isNaN(port) || port <= 0) {
+  throw new Error(`Invalid PORT value: "${rawPort}"`);
+}
+
+app.listen(port, (err) => {
+  if (err) {
+    logger.error({ err }, "Error listening on port");
+    process.exit(1);
+  }
+
+  logger.info({ port }, "Server listening");
+});
