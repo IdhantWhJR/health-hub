@@ -10,7 +10,7 @@ import { requireAdmin } from "../middlewares/admin-auth.js";
 
 const router: IRouter = Router();
 
-// GET /timeslots — available upcoming slots (public)
+// GET /timeslots ??? available upcoming slots (public)
 router.get("/timeslots", async (req, res): Promise<void> => {
   const today = new Date().toISOString().split("T")[0];
   const rows = await db
@@ -24,7 +24,7 @@ router.get("/timeslots", async (req, res): Promise<void> => {
   res.json(upcoming);
 });
 
-// POST /timeslots — create (admin only)
+// POST /timeslots ??? create (admin only)
 router.post("/timeslots", requireAdmin, async (req, res): Promise<void> => {
   const parsed = CreateTimeslotBody.safeParse(req.body);
   if (!parsed.success) {
@@ -33,21 +33,36 @@ router.post("/timeslots", requireAdmin, async (req, res): Promise<void> => {
   }
 
   const data = parsed.data;
-  const [slot] = await db
-    .insert(timeslotsTable)
-    .values({
-      date: String(data.date),
-      startTime: data.startTime,
-      endTime: data.endTime,
-      label: data.label ?? null,
-      isBooked: false,
-    })
-    .returning();
+  try {
+    const [slot] = await db
+      .insert(timeslotsTable)
+      .values({
+        date: String(data.date),
+        startTime: data.startTime,
+        endTime: data.endTime,
+        label: data.label ?? null,
+        isBooked: false,
+      })
+      .returning();
 
-  res.status(201).json(slot);
+    res.status(201).json(slot);
+  } catch (err: any) {
+    console.error("TIMESLOT INSERT FAILED:", {
+      message: err?.message,
+      cause: err?.cause,
+      code: err?.code ?? err?.cause?.code,
+      detail: err?.detail ?? err?.cause?.detail,
+      constraint: err?.constraint ?? err?.cause?.constraint,
+    });
+    res.status(500).json({
+      error: err?.message,
+      pgCode: err?.code ?? err?.cause?.code,
+      pgDetail: err?.detail ?? err?.cause?.detail,
+    });
+  }
 });
 
-// GET /timeslots/all — all slots including booked (admin only)
+// GET /timeslots/all ??? all slots including booked (admin only)
 router.get("/timeslots/all", requireAdmin, async (req, res): Promise<void> => {
   const rows = await db
     .select()
@@ -57,7 +72,7 @@ router.get("/timeslots/all", requireAdmin, async (req, res): Promise<void> => {
   res.json(rows);
 });
 
-// PATCH /timeslots/:id — update (admin only)
+// PATCH /timeslots/:id ??? update (admin only)
 router.patch("/timeslots/:id", requireAdmin, async (req, res): Promise<void> => {
   const params = UpdateTimeslotParams.safeParse(req.params);
   if (!params.success) {
@@ -93,7 +108,7 @@ router.patch("/timeslots/:id", requireAdmin, async (req, res): Promise<void> => 
   res.json(slot);
 });
 
-// DELETE /timeslots/:id — delete (admin only)
+// DELETE /timeslots/:id ??? delete (admin only)
 router.delete("/timeslots/:id", requireAdmin, async (req, res): Promise<void> => {
   const params = DeleteTimeslotParams.safeParse(req.params);
   if (!params.success) {
@@ -122,3 +137,4 @@ router.delete("/timeslots/:id", requireAdmin, async (req, res): Promise<void> =>
 });
 
 export default router;
+
