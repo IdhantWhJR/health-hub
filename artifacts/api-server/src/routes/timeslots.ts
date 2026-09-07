@@ -37,7 +37,7 @@ router.post("/timeslots", requireAdmin, async (req, res): Promise<void> => {
     const [slot] = await db
       .insert(timeslotsTable)
       .values({
-        date: String(data.date),
+        date: data.date.toISOString().split("T")[0],
         startTime: data.startTime,
         endTime: data.endTime,
         label: data.label ?? null,
@@ -88,7 +88,7 @@ router.patch("/timeslots/:id", requireAdmin, async (req, res): Promise<void> => 
 
   const data = parsed.data;
   const updateFields: Record<string, unknown> = {};
-  if (data.date !== undefined) updateFields.date = String(data.date);
+  if (data.date !== undefined) updateFields.date = data.date.toISOString().split("T")[0];
   if (data.startTime !== undefined) updateFields.startTime = data.startTime;
   if (data.endTime !== undefined) updateFields.endTime = data.endTime;
   if (data.label !== undefined) updateFields.label = data.label;
@@ -137,4 +137,5 @@ router.delete("/timeslots/:id", requireAdmin, async (req, res): Promise<void> =>
 });
 
 export default router;
+
 
