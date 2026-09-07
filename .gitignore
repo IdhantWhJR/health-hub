@@ -1,1 +1,6 @@
-.vercel, .env, .env.local, .env.example
+﻿.vercel
+.env
+.env.local
+.env.example
+node_modules
+dist
