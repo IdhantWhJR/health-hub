@@ -1,8 +1,13 @@
 import pg from "pg";
 const { Pool } = pg;
 
+const rawUrl = process.argv[2];
+const url = new URL(rawUrl);
+url.searchParams.delete("sslmode");
+url.searchParams.delete("supa");
+
 const pool = new Pool({
-  connectionString: process.argv[2],
+  connectionString: url.toString(),
   ssl: { rejectUnauthorized: false },
 });
 
@@ -13,7 +18,6 @@ try {
   client.release();
 } catch (err) {
   console.error("CONNECTION ERROR:", err.message);
-  console.error(err);
 } finally {
   await pool.end();
 }

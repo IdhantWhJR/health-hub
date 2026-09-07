@@ -4,8 +4,8 @@ import {
   CreateBookingBody,
   DeleteBookingParams,
 } from "@workspace/api-zod";
-import { requireAdmin } from "../middlewares/admin-auth";
-import { sendBookingNotification } from "../lib/email";
+import { requireAdmin } from "../middlewares/admin-auth.js";
+import { sendBookingNotification } from "../lib/email.js";
 
 const router: IRouter = Router();
 

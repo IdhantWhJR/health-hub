@@ -5,4 +5,4 @@
 // of sync with the real app in ../src, so we now just re-export the real,
 // fully wired Express app (routes + booking email notifications) instead of
 // maintaining two copies.
-export { default } from "../src/app";
+export { default } from "../src/app.js";

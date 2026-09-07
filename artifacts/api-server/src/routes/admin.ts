@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { db, recipesTable, blogsTable, timeslotsTable, bookingsTable, eq, count, and } from "@workspace/db";
 import { AdminLoginBody } from "@workspace/api-zod";
-import { requireAdmin } from "../middlewares/admin-auth";
+import { requireAdmin } from "../middlewares/admin-auth.js";
 
 const router: IRouter = Router();
 

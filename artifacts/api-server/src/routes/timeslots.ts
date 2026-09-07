@@ -6,7 +6,7 @@ import {
   UpdateTimeslotBody,
   DeleteTimeslotParams,
 } from "@workspace/api-zod";
-import { requireAdmin } from "../middlewares/admin-auth";
+import { requireAdmin } from "../middlewares/admin-auth.js";
 
 const router: IRouter = Router();
 
